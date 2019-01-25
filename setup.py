@@ -3,17 +3,17 @@
 
 """The setup script."""
 
-import sys
-from pathlib import Path
+import re
 from setuptools import setup, find_packages
 
 # note: version is maintained inside fastai/version.py
 exec(open('fastai/version.py').read())
 
-with open('README.md') as readme_file:   readme = readme_file.read()
-with open('CHANGES.md') as history_file: history = history_file.read()
+with open('README.md') as readme_file: readme = readme_file.read()
 
-def to_list(buffer): return list(filter(None, map(str.strip, buffer.splitlines())))
+# helper functions to make it easier to list dependencies not as a python list, but vertically w/ optional built-in comments to why a certain version of the dependency is listed
+def cleanup(x): return re.sub(r' *#.*', '', x.strip()) # comments
+def to_list(buffer): return list(filter(None, map(cleanup, buffer.splitlines())))
 
 ### normal dependencies ###
 #
@@ -22,63 +22,73 @@ def to_list(buffer): return list(filter(None, map(str.strip, buffer.splitlines()
 #   pip install fastai
 #   pip install -e .
 #
-# XXX: require torch>=1.0.0 once it's released, for now get the user to install it explicitly
-# XXX: using a workaround for torchvision, once torch-1.0.0 is out and a new torchvision depending on it is released switch to torchvision>=0.2.2
-# XXX: temporarily pinning spacy and its dependencies (regex, thinc, and cymem) to have a stable environment during the course duration.
+# dependencies to skip for now:
+# - cupy - is only required for QRNNs - sgugger thinks later he will get rid of this dep.
+#
+# IMPORTANT: when updating these, please make sure to sync conda/meta.yaml and docs/install.md (the "custom dependencies" section)
 requirements = to_list("""
-    fastprogress>=0.1.10
-    ipython
-    jupyter
+    bottleneck           # performance-improvement for numpy
+    dataclasses ; python_version<'3.7'
+    fastprogress>=0.1.18
+    beautifulsoup4
     matplotlib
-    nbconvert
-    nbformat
-    numpy>=1.15
+    numexpr              # performance-improvement for numpy
+    numpy>=1.12
+    nvidia-ml-py3
     pandas
+    packaging
     Pillow
+    pyyaml
     requests
     scipy
-    spacy==2.0.16
-    regex
-    thinc==6.12.0
-    cymem==2.0.2
-    torchvision-nightly
-    traitlets
+    spacy>=2.0.18
+    torch>=1.0.0
+    torchvision
     typing
 """)
-
-# dependencies to skip for now:
-#
-# cupy - is only required for QRNNs - sgguger thinks later he will get rid of this dep.
-# fire - will be eliminated shortly
-
-if sys.version_info < (3,7): requirements.append('dataclasses')
 
 ### developer dependencies ###
 #
 # anything else that's not required by a user to run the library, but
-# either an enhancement or developer-build requirement goes here.
+# either is an enhancement or a developer-build requirement goes here.
 #
 # the [dev] feature is documented here:
 # https://setuptools.readthedocs.io/en/latest/setuptools.html#declaring-extras-optional-features-with-their-own-dependencies
 #
-# these get installed with:
+# these, including the normal dependencies, get installed with:
 #
-#   pip install -e .[dev]
+#   pip install "fastai[dev]"
 #
-# some of the listed modules appear in test_requirements as well, explained below.
+# or via an editable install:
+#
+#   pip install -e ".[dev]"
+#
+# some of the listed modules appear in test_requirements as well, as explained below.
 #
 dev_requirements = { 'dev' : to_list("""
+    coverage
     distro
+    ipython
+    jupyter
     jupyter_contrib_nbextensions
-    pip>=18.1
+    nbconvert>=5.4
+    nbdime                       # help with nb diff/merge
+    nbformat
+    notebook>=5.7.0
+    pip>=9.0.1
     pipreqs>=0.4.9
     pytest
+    responses                    # for requests testing
+    traitlets
     wheel>=0.30.0
 """) }
 
 ### setup dependencies ###
+# need at least setuptools>=36.2 to support syntax:
+#   dataclasses ; python_version<'3.7'
 setup_requirements = to_list("""
     pytest-runner
+    setuptools>=36.2
 """)
 
 # notes:
@@ -110,7 +120,7 @@ setup(
     test_suite = 'tests',
 
     description = "fastai makes deep learning with PyTorch faster, more accurate, and easier",
-    long_description = readme + '\n\n' + history,
+    long_description = readme,
     long_description_content_type = 'text/markdown',
     keywords = 'fastai, deep learning, machine learning',
 
