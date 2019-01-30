@@ -47,7 +47,7 @@ summary: "Implementation of a flexible training API"
 </div>
 <div class="cell border-box-sizing text_cell rendered"><div class="inner_cell">
 <div class="text_cell_render border-box-sizing rendered_html">
-<p>Create a phase for training a model during <code>length</code> iterations, following a schedule given by <code>lrs</code> and <code>lr_anneal</code>, <code>moms</code> and <code>mom_anneal</code>. More specifically, the phase will make the learning rate (or momentum) vary from the first value of <code>lrs</code> (or <code>moms</code>) to the second, following <code>lr_anneal</code> (or <code>mom_anneal</code>). If an annealing function is speficied but <code>lrs</code> or <code>moms</code> is a float, it will decay to 0. If no annealing function is specified, the default is a linear annealing if <code>lrs</code> (or <code>moms</code>) is a tuple, a constant parameter if it's a float.</p>
+<p>Create a phase for training a model during <code>length</code> iterations, following a schedule given by <code>lrs</code> and <code>lr_anneal</code>, <code>moms</code> and <code>mom_anneal</code>. More specifically, the phase will make the learning rate (or momentum) vary from the first value of <code>lrs</code> (or <code>moms</code>) to the second, following <code>lr_anneal</code> (or <code>mom_anneal</code>). If an annealing function is specified but <code>lrs</code> or <code>moms</code> is a float, it will decay to 0. If no annealing function is specified, the default is a linear annealing if <code>lrs</code> (or <code>moms</code>) is a tuple, a constant parameter if it's a float.</p>
 
 </div>
 </div>
@@ -254,7 +254,7 @@ Total time: 00:16 <p><table style='width:300px; margin-bottom:10px'>
 
 
 <div class="output_markdown rendered_html output_subarea ">
-<h4 id="GeneralScheduler.on_batch_end"><code>on_batch_end</code><a href="https://github.com/fastai/fastai/blob/master/fastai/callbacks/general_sched.py#L35" class="source_link">[source]</a></h4><blockquote><p><code>on_batch_end</code>(<strong><code>train</code></strong>, <strong><code>kwargs</code></strong>:<code>Any</code>)</p>
+<h4 id="GeneralScheduler.on_batch_end"><code>on_batch_end</code><a href="https://github.com/fastai/fastai/blob/master/fastai/callbacks/general_sched.py#L35" class="source_link">[source]</a></h4><blockquote><p><code>on_batch_end</code>(<strong><code>train</code></strong>, <strong>**<code>kwargs</code></strong>:<code>Any</code>)</p>
 </blockquote>
 
 </div>
@@ -281,7 +281,7 @@ Total time: 00:16 <p><table style='width:300px; margin-bottom:10px'>
 
 
 <div class="output_markdown rendered_html output_subarea ">
-<h4 id="GeneralScheduler.on_train_begin"><code>on_train_begin</code><a href="https://github.com/fastai/fastai/blob/master/fastai/callbacks/general_sched.py#L27" class="source_link">[source]</a></h4><blockquote><p><code>on_train_begin</code>(<strong><code>n_epochs</code></strong>:<code>int</code>, <strong><code>kwargs</code></strong>:<code>Any</code>)</p>
+<h4 id="GeneralScheduler.on_train_begin"><code>on_train_begin</code><a href="https://github.com/fastai/fastai/blob/master/fastai/callbacks/general_sched.py#L27" class="source_link">[source]</a></h4><blockquote><p><code>on_train_begin</code>(<strong><code>n_epochs</code></strong>:<code>int</code>, <strong>**<code>kwargs</code></strong>:<code>Any</code>)</p>
 </blockquote>
 
 </div>
