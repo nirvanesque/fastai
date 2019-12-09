@@ -51,20 +51,18 @@ requirements:
   run:
     - dataclasses
     - beautifulsoup4
-    - fastprogress >=0.1.18
+    - fastprogress >=0.1.19
     - matplotlib
-    - numpy >=1.12
+    - numpy >=1.15
     - pandas
     - bottleneck
     - numexpr
-    - nb_conda
     - nvidia-ml-py3
     - packaging
     - pillow
     - requests
     - scipy
     - spacy >=2.0.18
-    - typing
     - pyyaml
     - pytorch >=1.0.0
     - torchvision
@@ -84,6 +82,7 @@ test:
   requires:
     - python
     - pytest
+    - responses
 
 about:
   home: {{ data.get('url') }}

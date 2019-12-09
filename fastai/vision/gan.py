@@ -4,7 +4,7 @@ from ..callback import *
 from ..basic_data import *
 from ..basic_train import Learner, LearnerCallback
 from .image import Image
-from .data import ImageItemList
+from .data import ImageList
 
 __all__ = ['basic_critic', 'basic_generator', 'GANModule', 'GANLoss', 'GANTrainer', 'FixedGANSwitcher', 'AdaptiveGANSwitcher',
            'GANLearner', 'NoisyItem', 'GANItemList', 'gan_critic', 'AdaptiveLoss', 'accuracy_thresh_expand',
@@ -14,34 +14,33 @@ def AvgFlatten():
     "Takes the average of the input."
     return Lambda(lambda x: x.mean(0).view(1))
 
-def basic_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, **kwargs):
+def basic_critic(in_size:int, n_channels:int, n_features:int=64, n_extra_layers:int=0, **conv_kwargs):
     "A basic critic for images `n_channels` x `in_size` x `in_size`."
-    layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **kwargs)]#norm_type=None?
+    layers = [conv_layer(n_channels, n_features, 4, 2, 1, leaky=0.2, norm_type=None, **conv_kwargs)]#norm_type=None?
     cur_size, cur_ftrs = in_size//2, n_features
-    layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=0.2, **kwargs) for _ in range(n_extra_layers)]))
+    layers.append(nn.Sequential(*[conv_layer(cur_ftrs, cur_ftrs, 3, 1, leaky=0.2, **conv_kwargs) for _ in range(n_extra_layers)]))
     while cur_size > 4:
-        layers.append(conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=0.2, **kwargs))
+        layers.append(conv_layer(cur_ftrs, cur_ftrs*2, 4, 2, 1, leaky=0.2, **conv_kwargs))
         cur_ftrs *= 2 ; cur_size //= 2
     layers += [conv2d(cur_ftrs, 1, 4, padding=0), AvgFlatten()]
     return nn.Sequential(*layers)
 
-def basic_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers=0, **kwargs):
+def basic_generator(in_size:int, n_channels:int, noise_sz:int=100, n_features:int=64, n_extra_layers=0, **conv_kwargs):
     "A basic generator from `noise_sz` to images `n_channels` x `in_size` x `in_size`."
     cur_size, cur_ftrs = 4, n_features//2
     while cur_size < in_size:  cur_size *= 2; cur_ftrs *= 2
-    layers = [conv_layer(noise_sz, cur_ftrs, 4, 1, transpose=True, **kwargs)]
+    layers = [conv_layer(noise_sz, cur_ftrs, 4, 1, transpose=True, **conv_kwargs)]
     cur_size = 4
     while cur_size < in_size // 2:
-        layers.append(conv_layer(cur_ftrs, cur_ftrs//2, 4, 2, 1, transpose=True, **kwargs))
+        layers.append(conv_layer(cur_ftrs, cur_ftrs//2, 4, 2, 1, transpose=True, **conv_kwargs))
         cur_ftrs //= 2; cur_size *= 2
-    layers += [conv_layer(cur_ftrs, cur_ftrs, 3, 1, 1, transpose=True, **kwargs) for _ in range(n_extra_layers)]
+    layers += [conv_layer(cur_ftrs, cur_ftrs, 3, 1, 1, transpose=True, **conv_kwargs) for _ in range(n_extra_layers)]
     layers += [conv2d_trans(cur_ftrs, n_channels, 4, 2, 1, bias=False), nn.Tanh()]
     return nn.Sequential(*layers)
 
-class GANModule(nn.Module):
+class GANModule(Module):
     "Wrapper around a `generator` and a `critic` to create a GAN."
     def __init__(self, generator:nn.Module=None, critic:nn.Module=None, gen_mode:bool=False):
-        super().__init__()
         self.gen_mode = gen_mode
         if generator: self.generator,self.critic = generator,critic
 
@@ -99,7 +98,7 @@ class GANTrainer(LearnerCallback):
         self.switch(self.gen_mode)
         self.closses,self.glosses = [],[]
         self.smoothenerG,self.smoothenerC = SmoothenValue(self.beta),SmoothenValue(self.beta)
-        self.recorder.no_val=True
+        #self.recorder.no_val=True
         self.recorder.add_metric_names(['gen_loss', 'disc_loss'])
         self.imgs,self.titles = [],[]
 
@@ -111,11 +110,12 @@ class GANTrainer(LearnerCallback):
         "Clamp the weights with `self.clip` if it's not None, return the correct input."
         if self.clip is not None:
             for p in self.critic.parameters(): p.data.clamp_(-self.clip, self.clip)
-        return (last_input,last_target) if self.gen_mode else (last_target, last_input)
+        if last_input.dtype == torch.float16: last_target = to_half(last_target)
+        return {'last_input':last_input,'last_target':last_target} if self.gen_mode else {'last_input':last_target,'last_target':last_input}
 
     def on_backward_begin(self, last_loss, last_output, **kwargs):
         "Record `last_loss` in the proper list."
-        last_loss = last_loss.detach().cpu()
+        last_loss = last_loss.float().detach().cpu()
         if self.gen_mode:
             self.smoothenerG.add_value(last_loss)
             self.glosses.append(self.smoothenerG.smooth)
@@ -123,14 +123,17 @@ class GANTrainer(LearnerCallback):
         else:
             self.smoothenerC.add_value(last_loss)
             self.closses.append(self.smoothenerC.smooth)
-
+    
+    def on_batch_end(self, **kwargs):
+        self.opt_critic.zero_grad()
+        self.opt_gen.zero_grad()
+    
     def on_epoch_begin(self, epoch, **kwargs):
         "Put the critic or the generator back to eval if necessary."
         self.switch(self.gen_mode)
 
-    def on_epoch_end(self, pbar, epoch, **kwargs):
+    def on_epoch_end(self, pbar, epoch, last_metrics, **kwargs):
         "Put the various losses in the recorder and show a sample image."
-        self.recorder.add_metrics([getattr(self.smoothenerG,'smooth',None),getattr(self.smoothenerC,'smooth',None)])
         if not hasattr(self, 'last_gen') or not self.show_img: return
         data = self.learn.data
         img = self.last_gen[0]
@@ -140,6 +143,7 @@ class GANTrainer(LearnerCallback):
         self.imgs.append(img)
         self.titles.append(f'Epoch {epoch}')
         pbar.show_imgs(self.imgs, self.titles)
+        return add_metrics(last_metrics, [getattr(self.smoothenerG,'smooth',None),getattr(self.smoothenerC,'smooth',None)])
 
     def switch(self, gen_mode:bool=None):
         "Switch the model, if `gen_mode` is provided, in the desired mode."
@@ -206,36 +210,38 @@ class GANLearner(Learner):
     "A `Learner` suitable for GANs."
     def __init__(self, data:DataBunch, generator:nn.Module, critic:nn.Module, gen_loss_func:LossFunction,
                  crit_loss_func:LossFunction, switcher:Callback=None, gen_first:bool=False, switch_eval:bool=True,
-                 show_img:bool=True, clip:float=None, **kwargs):
+                 show_img:bool=True, clip:float=None, **learn_kwargs):
         gan = GANModule(generator, critic)
         loss_func = GANLoss(gen_loss_func, crit_loss_func, gan)
         switcher = ifnone(switcher, partial(FixedGANSwitcher, n_crit=5, n_gen=1))
-        super().__init__(data, gan, loss_func=loss_func, callback_fns=[switcher], **kwargs)
+        super().__init__(data, gan, loss_func=loss_func, callback_fns=[switcher], **learn_kwargs)
         trainer = GANTrainer(self, clip=clip, switch_eval=switch_eval, show_img=show_img)
         self.gan_trainer = trainer
         self.callbacks.append(trainer)
 
     @classmethod
     def from_learners(cls, learn_gen:Learner, learn_crit:Learner, switcher:Callback=None,
-                      weights_gen:Tuple[float,float]=None, **kwargs):
+                      weights_gen:Tuple[float,float]=None, **learn_kwargs):
         "Create a GAN from `learn_gen` and `learn_crit`."
         losses = gan_loss_from_func(learn_gen.loss_func, learn_crit.loss_func, weights_gen=weights_gen)
-        return cls(learn_gen.data, learn_gen.model, learn_crit.model, *losses, switcher=switcher, **kwargs)
+        return cls(learn_gen.data, learn_gen.model, learn_crit.model, *losses, switcher=switcher, **learn_kwargs)
 
     @classmethod
-    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, clip:float=0.01, **kwargs):
+    def wgan(cls, data:DataBunch, generator:nn.Module, critic:nn.Module, switcher:Callback=None, clip:float=0.01, **learn_kwargs):
         "Create a WGAN from `data`, `generator` and `critic`."
-        return cls(data, generator, critic, NoopLoss(), WassersteinLoss(), switcher=switcher, clip=clip, **kwargs)
+        return cls(data, generator, critic, NoopLoss(), WassersteinLoss(), switcher=switcher, clip=clip, **learn_kwargs)
 
 class NoisyItem(ItemBase):
     "An random `ItemBase` of size `noise_sz`."
     def __init__(self, noise_sz): self.obj,self.data = noise_sz,torch.randn(noise_sz, 1, 1)
     def __str__(self):  return ''
-    def apply_tfms(self, tfms, **kwargs): return self
+    def apply_tfms(self, tfms, **kwargs): 
+        for f in listify(tfms): f.resolve()
+        return self
 
-class GANItemList(ImageItemList):
+class GANItemList(ImageList):
     "`ItemList` suitable for GANs."
-    _label_cls = ImageItemList
+    _label_cls = ImageList
 
     def __init__(self, items, noise_sz:int=100, **kwargs):
         super().__init__(items, **kwargs)
@@ -289,10 +295,9 @@ class GANDiscriminativeLR(LearnerCallback):
         "Put the LR back to its value if necessary."
         if not self.learn.gan_trainer.gen_mode: self.learn.opt.lr /= self.mult_lr
 
-class AdaptiveLoss(nn.Module):
+class AdaptiveLoss(Module):
     "Expand the `target` to match the `output` size before applying `crit`."
     def __init__(self, crit):
-        super().__init__()
         self.crit = crit
 
     def forward(self, output, target):
@@ -301,4 +306,4 @@ class AdaptiveLoss(nn.Module):
 def accuracy_thresh_expand(y_pred:Tensor, y_true:Tensor, thresh:float=0.5, sigmoid:bool=True)->Rank0Tensor:
     "Compute accuracy after expanding `y_true` to the size of `y_pred`."
     if sigmoid: y_pred = y_pred.sigmoid()
-    return ((y_pred>thresh)==y_true[:,None].expand_as(y_pred).byte()).float().mean()
+    return ((y_pred>thresh).byte()==y_true[:,None].expand_as(y_pred).byte()).float().mean()
